@@ -3,6 +3,7 @@
 ## 首先一个很大的误区就是redux是专门给react使用的，其实在原生js或者vue中，redux都是可以发挥他的作用
 
 ## 1、先用官网的例子来介绍下redux的最基本的使用（使用在原生js中）
+> ### 注： 在阅读时，请先摒弃之前的使用习惯，不要去思考react-redux，dva，saga等用法，这些辅助工具都是对redux进行了二次的封装，过度纠结辅助工具的语法只会让你对redux源码更加纠结，所以请先抛弃之前的使用语法，我们就从最原始的redux语法开始讲起
 ``` js
   //    ./src/index.jsx
   import { createStore } from "redux";
