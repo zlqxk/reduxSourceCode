@@ -38,11 +38,11 @@
   store.dispatch({ type: "INCREMENT" });
 
 ```
-## 短短几行代码就可以实现redux的基本功能，那上面的例子中都用到了那几个api呢，有创建store的createStore，和挂载在store上的订阅subscribe，派发action的dispatch，获取最新状态的getState，那我们就先看下这几个是怎么实现的（可以直接在node_module中找到redux源码文件中的es文件夹下redux.js去debugger）
+### 短短几行代码就可以实现redux的基本功能，那上面的例子中都用到了哪几个api呢，有创建store的createStore，和挂载在store上的订阅subscribe，派发action的dispatch，获取最新状态的getState，那我们就先看下这几个是怎么实现的（可以直接在node_module中找到redux源码文件中的es文件夹下redux.js去debugger）
 ___
 
-## 那我们就先看看createStore到底有什么玄机，由于createStore源码较长，我把他拆成几部分一点一点看
-> ## 我们可以看到createStore接收三个参数，我们上面的例子只传入了第一个参数reducer，第二个参数preloadedState是初始化状态，第三个参数enhancer是用来使用中间件
+### 那我们就先看看createStore到底有什么玄机，由于createStore源码较长，我把他拆成几部分一点一点看
+> ### 我们可以看到createStore接收三个参数，我们上面的例子只传入了第一个参数reducer，第二个参数preloadedState是初始化状态，第三个参数enhancer是用来使用中间件
 ``` js
   export default function createStore(reducer, preloadedState, enhancer) {
     // 一些类型判断。。。
@@ -105,6 +105,7 @@ ___
 
     /**
      * getState用来返回最新的状态，在上述的例子中我们正是在订阅的回调中调用了这个方法来打印最新的状态
+     * console.log(store.getState())
      * 那返回的这个currentState是什么时候改变呢，在后面的dispatch里我们会讲到
      */
     function getState() {
@@ -120,7 +121,7 @@ ___
     }
   }
 ```
->## 紧接上文，下面介绍createStore中的subscribe是怎么实现的
+>### 紧接上文，下面介绍createStore中的subscribe是怎么实现的
 ```js
   // 可以看到这个subscribe这个方法只接受一个参数，我们上面的的例子传入了一个回调函数来打印最新的状态
   // 再回忆下我们当时怎么使用的
@@ -185,7 +186,7 @@ ___
     }
   }
 ```
-> ## 紧接上文我们介绍下dispatch是如何实现派发action的
+> ### 紧接上文我们介绍下dispatch是如何实现派发action的
 ```js
   /** 
    * 回忆下我们当时是怎么使用的
@@ -247,7 +248,7 @@ ___
     try {
       isDispatching = true
       /** 
-       * @params currentState就是state = 0
+       * @params currentState就是当前的状态，第一次是默认参数state = 0，后续都是返回的最新的状态
        * @params action = { type: "INCREMENT" }
        * 然后返回新的state给currentState
        * 还记不记得getState()这个函数，不记得话去上面看一下，getState()这个函数的返回值正是currentState
@@ -261,7 +262,7 @@ ___
     /** 
      * 为什么每当我们执行store.dispatch({ type: "INCREMENT" })，subscribe订阅的回调函数都会自动执行呢
      * 正是因为在subscribe这个函数里我们将要订阅的回调函数push到了nextListeners这个数组里
-     * 然后再这里我们就可以遍历nextListeners这个数组来执行我们订阅的回调函数
+     * 然后在这里我们就可以遍历nextListeners这个数组来执行我们订阅的回调函数
       store.subscribe(() =>
         console.log(store.getState())
       );
@@ -277,7 +278,7 @@ ___
   }
 ```
 ***
-> ## 以上就是createStore的核心部分，createStore里最后还有两个不常用的函数，这里贴出来大体解释下
+> ### 以上就是createStore的核心部分，createStore里最后还有两个不常用的函数，这里贴出来大体解释下
 
 ```js
   // 通过条件判断之后，以达到替换reducer效果
@@ -330,9 +331,9 @@ ___
     }
   }
 ```
-> ## 再createStore的结尾将这些方法暴露出来，这样我们就可以通过store.xxx来调用了
+> ### 在createStore的结尾将这些方法暴露出来，这样我们就可以通过store.xxx来调用了
 ```js
-  // 这里redux默认派发了一个action用来初始化stateTree，个人感觉没啥luan用 --！
+  // 这里redux默认派发了一个action用来初始化stateTree，ActionTypes.INIT这个其实就是一个随机的字符，用来触发reducer里的switch里的default的回调，返回初始化的状态
   dispatch({ type: ActionTypes.INIT })
 
   return {
@@ -343,6 +344,304 @@ ___
     [$$observable]: observable
   }
 ```
+
+***
+
+> ### 以上就是最基础的redux使用及其源码，但是在我们的使用中，通常都是维护一个状态树，然后通过多个reducer来改变状态树，redux提供了combineReducers 这个api来帮助我们维护多个reducer，先让我们看下combineReducers 的使用
+
+```js
+  //   ./src/index2.jsx   提示：将webpack入口改为index2.jsx即可运行
+  import { createStore, combineReducers } from "redux";
+
+  // 创建多个reducer
+
+  function counter(state = 0, action) {
+    switch (action.type) {
+      case "INCREMENT":
+        return state + 1;
+      case "DECREMENT":
+        return state - 1;
+      default:
+        return state;
+    }
+  }
+
+  function counter2(state = 0, action) {
+    switch (action.type) {
+      case "INCREMENT2":
+        return state + 1;
+      case "DECREMENT2":
+        return state - 1;
+      default:
+        return state;
+    }
+  }
+
+  // 这里我们可以看到combineReducers方法接受一个对象为参数，对象的value正是每一个reducer
+  const rootReducer = combineReducers({
+    counter,
+    counter2
+  })
+
+  // 传入创建的reducer并创建store
+  const store = createStore(rootReducer);
+
+  // 手动订阅更新 (当dispatch action 将会执行回调函数)
+  store.subscribe(() =>
+    // getState() 用来获取最新的state
+    console.log(store.getState())
+  );
+
+  /**
+   * 派发action，每次派发action都会在reducer中进行匹配，然后返回对应的state
+   * 在上面我们已经手动订阅了更新，所以每次派发action时，都会触发store.subscribe回调函数，然后将最新的state打印出来
+   */
+  store.dispatch({ type: "INCREMENT" });
+  store.dispatch({ type: "INCREMENT" });
+  store.dispatch({ type: "INCREMENT" });
+
+  store.dispatch({ type: "INCREMENT2" });
+  store.dispatch({ type: "INCREMENT2" });
+  store.dispatch({ type: "INCREMENT2" });
+  // 输出的结果
+  // {counter: 1, counter2: 0}
+  // {counter: 2, counter2: 0}
+  // {counter: 3, counter2: 0}
+  // {counter: 3, counter2: 1}
+  // {counter: 3, counter2: 2}
+  // {counter: 3, counter2: 3}
+
+```
+### 上述的例子我们可以看到，createStore这个方法接收的是合并的rootReducer为参数，并且store.getState()返回的state变为了对象的形式{counter: 1, counter2: 0}，那combineReducers究竟做了什么，让我们来一探究竟！
+```js
+  // 参数reducers 为我们传入的 {counter: function counter, counter2: function counter2}
+  function combineReducers(reducers) {
+    // Object.keys方法返回对象的所有可枚举属性的数组
+    // reducerKeys = [counter, counter2]
+    const reducerKeys = Object.keys(reducers) 
+    const finalReducers = {}
+    for (let i = 0; i < reducerKeys.length; i++) {
+      const key = reducerKeys[i]
+
+      // 如果在开发环境，会有一个报错提示
+      if (process.env.NODE_ENV !== 'production') {
+        if (typeof reducers[key] === 'undefined') {
+          warning(`No reducer provided for key "${key}"`)
+        }
+      }
+      
+      /** 
+       * 这里其实就是一个筛选的过程，如果我们传入的reducers参数是这种格式
+       * {
+       *    counter: function counter
+       *    counter2: function counter2
+       *    counter3: undefined
+       * }
+       * 那么将会把counter3过滤掉，返回的finalReducers为 
+       * 
+       * {
+       *    counter: function counter
+       *    counter2: function counter2
+       * }
+      */
+      if (typeof reducers[key] === 'function') {
+        finalReducers[key] = reducers[key]
+      }
+    }
+    /**
+     *  得到最终的finalReducerKeys和finalReducers
+     *  finalReducerKeys = ['counter', 'counter2']
+     *  finalReducers = {
+     *    counter: funtion counter,
+     *    counter2: funtion counter2
+     *  }
+     */ 
+    const finalReducerKeys = Object.keys(finalReducers)
+
+    // This is used to make sure we don't warn about the same
+    // keys multiple times.
+    let unexpectedKeyCache
+    if (process.env.NODE_ENV !== 'production') {
+      unexpectedKeyCache = {}
+    }
+
+    // 这里是做一个类型判断，这个函数的解析在下方，可以先移步下方assertReducerShape的解析
+    let shapeAssertionError
+    try {
+      assertReducerShape(finalReducers)
+    } catch (e) {
+      shapeAssertionError = e
+    }
+
+    /** 
+     * 精髓来了，combineReducers在经历了一系列的判断后，最终会返回一个函数combination
+      const rootReducer = combineReducers({
+        counter,
+        counter2
+      })
+      const store = createStore(rootReducer);
+     * 然后我们再将这个函数传入createStore
+     * 大家还记得createStore接受的第一个参数吗，在没有使用combineReducers之前传入的是单个的reducer
+     * 在使用了之后传入的是combination
+     * 回忆一下createStore中的dispatch函数，现在的currentReducer正是combination
+     * try {
+        isDispatching = true
+        currentState = currentReducer(currentState, action)
+      } finally {
+        isDispatching = false
+      }
+    */
+    return function combination(state = {}, action) {
+      // 结合上文的shapeAssertionError， 如果assertReducerShape里抛出了异常，那么在这里也会被阻塞
+      if (shapeAssertionError) {
+        throw shapeAssertionError
+      }
+      // 如果不是在生产环境下，做一些警告级别的错误
+      if (process.env.NODE_ENV !== 'production') {
+        // 这个函数的解析也在下方，可以先移步下方的getUnexpectedStateShapeWarningMessage解析
+        const warningMessage = getUnexpectedStateShapeWarningMessage(
+          state, // currentState
+          finalReducers, // 多个reducer组成的对象
+          action, // 传入的action
+          unexpectedKeyCache
+        )
+        if (warningMessage) {
+          warning(warningMessage)
+        }
+      }
+
+      
+      // 经过了一系列的判断以后，终于来到了精髓部分
+      let hasChanged = false
+      const nextState = {}
+      // finalReducerKeys = ['counter', 'counter2']
+      for (let i = 0; i < finalReducerKeys.length; i++) {
+        // 为了方便大家理解，我们以i=0时刻为例，看一下每一个字段对应着什么
+        const key = finalReducerKeys[i] // 'counter'
+        const reducer = finalReducers[key] // function counter
+        const previousStateForKey = state[key] // counter对应的之前的状态
+        // 派发对应
+        const nextStateForKey = reducer(previousStateForKey, action)
+        if (typeof nextStateForKey === 'undefined') {
+          const errorMessage = getUndefinedStateErrorMessage(key, action)
+          throw new Error(errorMessage)
+        }
+        nextState[key] = nextStateForKey
+        hasChanged = hasChanged || nextStateForKey !== previousStateForKey
+      }
+      hasChanged =
+        hasChanged || finalReducerKeys.length !== Object.keys(state).length
+      return hasChanged ? nextState : state
+    }
+  }
+```
+> ### assertReducerShape解析，主要作用是保证你的reducer都是正常可运行的
+```js
+  // 入参reducers为
+  // {
+  //   counter: funtion counter,
+  //   counter2: funtion counter2
+  // }
+  function assertReducerShape(reducers) {
+    Object.keys(reducers).forEach(key => {
+      const reducer = reducers[key]
+      // 这一步相当于redux手动派发了一次action，ActionTypes.INIT在上文讲过，就是是一个随机的字符串，用来触发reducer里switch判断的defalut 
+      // default:
+      //   return state;
+      // 如果在reducer函数里没有写defalut，或者在default里没有返回state， 那么将会抛出下面的异常
+      const initialState = reducer(undefined, { type: ActionTypes.INIT })
+
+      if (typeof initialState === 'undefined') {
+        throw new Error(
+          `Reducer "${key}" returned undefined during initialization. ` +
+            `If the state passed to the reducer is undefined, you must ` +
+            `explicitly return the initial state. The initial state may ` +
+            `not be undefined. If you don't want to set a value for this reducer, ` +
+            `you can use null instead of undefined.`
+        )
+      }
+
+      // 这里是确保不能占用redux内部特有的命名空间 redux/*
+      if (
+        typeof reducer(undefined, {
+          type: ActionTypes.PROBE_UNKNOWN_ACTION()
+        }) === 'undefined'
+      ) {
+        throw new Error(
+          `Reducer "${key}" returned undefined when probed with a random type. ` +
+            `Don't try to handle ${ActionTypes.INIT} or other actions in "redux/*" ` +
+            `namespace. They are considered private. Instead, you must return the ` +
+            `current state for any unknown actions, unless it is undefined, ` +
+            `in which case you must return the initial state, regardless of the ` +
+            `action type. The initial state may not be undefined, but can be null.`
+        )
+      }
+    })
+  }
+```
+> ### getUnexpectedStateShapeWarningMessage解析，主要是一些警告错误，判断reducers是否为空，inputState是否是简单对象等
+```js
+  /** 
+   * @params inputState 也就是currentState
+   * @params reducers 也就是finalReducers
+   * @params action
+  */
+  function getUnexpectedStateShapeWarningMessage(
+    inputState,
+    reducers,
+    action,
+    unexpectedKeyCache
+  ) {
+    // 国际惯例，还是先取出多个reducers属性组成的数组 reducerKeys = ['counter', 'counter2']
+    const reducerKeys = Object.keys(reducers)
+    const argumentName =
+      // 这块其实就是根据action.type来确定报错时候的文案
+      action && action.type === ActionTypes.INIT
+        ? 'preloadedState argument passed to createStore'
+        : 'previous state received by the reducer'
+    // 至少要有一个reducer
+    if (reducerKeys.length === 0) {
+      return (
+        'Store does not have a valid reducer. Make sure the argument passed ' +
+        'to combineReducers is an object whose values are reducers.'
+      )
+    }
+    // 这个地方判断第一个参数inputState是不是一个简单对象
+    // 这个时候机智的小伙伴就已经发现，我们对currentState的判断已经变成了一个简单对象
+    // 回忆一下，store.getState()返回的数据格式 {counter: 3, counter2: 3}
+    if (!isPlainObject(inputState)) {
+      return (
+        `The ${argumentName} has unexpected type of "` +
+        {}.toString.call(inputState).match(/\s([a-z|A-Z]+)/)[1] +
+        `". Expected argument to be an object with the following ` +
+        `keys: "${reducerKeys.join('", "')}"`
+      )
+    }
+    // 以下操作主要是用来确保有没有不合理的key
+    const unexpectedKeys = Object.keys(inputState).filter(
+      // reducers.hasOwnProperty(key)用来判断对象reducers里有没有属性key
+      key => !reducers.hasOwnProperty(key) && !unexpectedKeyCache[key]
+    )
+
+    unexpectedKeys.forEach(key => {
+      unexpectedKeyCache[key] = true
+    })
+
+    if (action && action.type === ActionTypes.REPLACE) return
+
+    if (unexpectedKeys.length > 0) {
+      return (
+        `Unexpected ${unexpectedKeys.length > 1 ? 'keys' : 'key'} ` +
+        `"${unexpectedKeys.join('", "')}" found in ${argumentName}. ` +
+        `Expected to find one of the known reducer keys instead: ` +
+        `"${reducerKeys.join('", "')}". Unexpected keys will be ignored.`
+      )
+    }
+  }
+```
+
+
+
 
 
 
