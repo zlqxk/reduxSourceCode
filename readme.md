@@ -3,7 +3,7 @@
 ## 首先一个很大的误区就是redux是专门给react使用的，其实在原生js或者vue中，redux都是可以发挥他的作用
 
 ## 1、先用官网的例子来介绍下redux的最基本的使用（使用在原生js中）
-> ### 注： 在阅读时，请先摒弃之前的使用习惯，不要去思考react-redux，dva，saga等用法，这些辅助工具都是对redux进行了二次的封装，过度纠结辅助工具的语法只会让你对redux源码更加纠结，所以请先抛弃之前的使用语法，我们就从最原始的redux语法开始讲起
+> ### 注： 在阅读时，请先摒弃之前的使用习惯，不要去思考react-redux，dva，saga等用法，过度纠结辅助工具的语法只会让你对redux源码更加纠结，所以请先抛弃之前的使用语法，我们就从最原始的redux语法开始讲起
 ``` js
   //    ./src/index.jsx
   import { createStore } from "redux";
@@ -42,7 +42,7 @@
 ___
 
 ### 那我们就先看看createStore到底有什么玄机，由于createStore源码较长，我把他拆成几部分一点一点看
-> ### 我们可以看到createStore接收三个参数，我们上面的例子只传入了第一个参数reducer，第二个参数preloadedState是初始化状态，第三个参数enhancer是用来使用中间件
+> ### 我们可以看到createStore接收三个参数，我们上面的例子只传入了第一个参数reducer。第二个参数是preloadedState是初始化状态，第三个参数是enhancer，这个的作用是用来增强action的能力也就是所谓的中间件
 ``` js
   export default function createStore(reducer, preloadedState, enhancer) {
     // 一些类型判断。。。
@@ -71,7 +71,7 @@ ___
       if (typeof enhancer !== 'function') {
         throw new Error('Expected the enhancer to be a function.')
       }
-      // 返回中间件，这个属于redux高级，在讲中间件的部分我们重点讲
+      // 返回中间件，这个属于redux高级，在讲中间件的部分我们重点讲，现在可以先忽略
       return enhancer(createStore)(reducer, preloadedState)
     }
 
@@ -162,10 +162,10 @@ ___
     nextListeners.push(listener)
 
     // 返回一个用来卸载订阅的函数
+    // 这样就可以卸载订阅
     // store.subscribe(() =>
     //   console.log(store.getState())
     // )();
-    // 这样就可以卸载订阅
     return function unsubscribe() {
       if (!isSubscribed) {
         return
@@ -333,7 +333,7 @@ ___
 ```
 > ### 在createStore的结尾将这些方法暴露出来，这样我们就可以通过store.xxx来调用了
 ```js
-  // 这里redux默认派发了一个action用来初始化stateTree，ActionTypes.INIT这个其实就是一个随机的字符，用来触发reducer里的switch里的default的回调，返回初始化的状态
+  // 这里redux默认派发了一个action用来初始化stateTree，ActionTypes.INIT这个其实就是一个随机的字符，用来触发reducer里的switch里的default的回调，返回初始化的状态，这次的dispatch不会触发订阅，因为订阅在store创建之后
   dispatch({ type: ActionTypes.INIT })
 
   return {
@@ -483,13 +483,14 @@ ___
      * 然后我们再将这个函数传入createStore
      * 大家还记得createStore接受的第一个参数吗，在没有使用combineReducers之前传入的是单个的reducer
      * 在使用了之后传入的是combination
-     * 回忆一下createStore中的dispatch函数，现在的currentReducer正是combination
+     * 回忆一下createStore中的dispatch函数
      * try {
         isDispatching = true
         currentState = currentReducer(currentState, action)
       } finally {
         isDispatching = false
       }
+     * 现在的currentReducer正是combination
     */
     return function combination(state = {}, action) {
       // 结合上文的shapeAssertionError， 如果assertReducerShape里抛出了异常，那么在这里也会被阻塞
@@ -513,22 +514,46 @@ ___
       
       // 经过了一系列的判断以后，终于来到了精髓部分
       let hasChanged = false
+      // 这个nextState就是最终返回值
       const nextState = {}
       // finalReducerKeys = ['counter', 'counter2']
       for (let i = 0; i < finalReducerKeys.length; i++) {
         // 为了方便大家理解，我们以i=0时刻为例，看一下每一个字段对应着什么
         const key = finalReducerKeys[i] // 'counter'
         const reducer = finalReducers[key] // function counter
-        const previousStateForKey = state[key] // counter对应的之前的状态
-        // 派发对应
+        const previousStateForKey = state[key] // state就是currentState，现在是undefind
+        // 执行function counter，并且将最新的state赋值给nextStateForKey
         const nextStateForKey = reducer(previousStateForKey, action)
         if (typeof nextStateForKey === 'undefined') {
           const errorMessage = getUndefinedStateErrorMessage(key, action)
           throw new Error(errorMessage)
         }
-        nextState[key] = nextStateForKey
+        /** 
+         * 这个函数作用就是返回一段错误文案
+         * 
+        function getUndefinedStateErrorMessage(key, action) {
+          const actionType = action && action.type
+          const actionDescription =
+            (actionType && `action "${String(actionType)}"`) || 'an action'
+
+          return (
+            `Given ${actionDescription}, reducer "${key}" returned undefined. ` +
+            `To ignore an action, you must explicitly return the previous state. ` +
+            `If you want this reducer to hold no value, you can return null instead of undefined.`
+          )
+        }
+        */
+
+        // 将counter这次返回的最新的state赋值到nextState这个对象里，所以我们最后拿到的是{conuter: 1, counter: 2} 这种格式
+        nextState[key] = nextStateForKey 
+        // hasChanged的作用是用来判断最新的状态与上一次的状态有没有发生改变，如果发生改变则为true
+        // 并且这里有一个短路操作，只要多个reducer其中有一个状态发生了改变，则hasChanged为true
         hasChanged = hasChanged || nextStateForKey !== previousStateForKey
       }
+      // 如果所有的reducer都没有改变状态，则返回原来的状态，否则返回最新的状态
+      // 这里就有疑问了，为什么要做这个判断，而不是直接返回最新的状态呢
+      // 个人理解这里之所以要做这个判断，是因为在状态没有改变的情况，还是返回之前的引用，就不必再开辟新的引用来存储
+      // 新的状态，只有状态发生改变，才去返回最新的引用
       hasChanged =
         hasChanged || finalReducerKeys.length !== Object.keys(state).length
       return hasChanged ? nextState : state
