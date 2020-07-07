@@ -1,8 +1,9 @@
 ## 本文将由浅到深介绍redux及其辅助工具（react-redux、redux-saga、redux-thunk）的使用及其原理，想写这篇文章很久了，今天终于抽出时间来记录一下，小伙伴们准备好了吗，发车！
 
-## 首先一个很大的误区就是redux是专门给react使用的，其实在原生js或者vue中，redux都是可以发挥他的作用
+## 首先一个很大的误区就是redux是专门给react使用的，在原生js或者vue中，redux都是可以发挥他的作用
 
-## 1、先用官网的例子来介绍下redux的最基本的使用（使用在原生js中）
+## 1、redux的基本的使用
+### 先用官网的例子来介绍下redux的最基本的使用（使用在原生js中）
 > ### 注： 在阅读时，请先摒弃之前的使用习惯，不要去思考react-redux，dva，saga等用法，过度纠结辅助工具的语法只会让你对redux源码更加纠结，所以请先抛弃之前的使用语法，我们就从最原始的redux语法开始讲起
 ``` js
   //    ./src/index.jsx
@@ -42,7 +43,7 @@
 ___
 
 ### 那我们就先看看createStore到底有什么玄机，由于createStore源码较长，我把他拆成几部分一点一点看
-> ### 我们可以看到createStore接收三个参数，我们上面的例子只传入了第一个参数reducer。第二个参数是preloadedState是初始化状态，第三个参数是enhancer，这个的作用是用来增强action的能力也就是所谓的中间件
+> ### 我们可以看到createStore接收三个参数，我们上面的例子只传入了第一个参数reducer。第二个参数是preloadedState是初始化状态，第三个参数是enhancer，这个的作用是用来增强dispatch的能力
 ``` js
   export default function createStore(reducer, preloadedState, enhancer) {
     // 一些类型判断。。。
@@ -71,7 +72,7 @@ ___
       if (typeof enhancer !== 'function') {
         throw new Error('Expected the enhancer to be a function.')
       }
-      // 返回中间件，这个属于redux高级，在讲中间件的部分我们重点讲，现在可以先忽略
+      // 接受中间件来增强dispatch的能力，在讲中间件的部分我们重点讲，现在可以先忽略
       return enhancer(createStore)(reducer, preloadedState)
     }
 
@@ -87,7 +88,7 @@ ___
 
     /** 
      * 用来确保nextListeners和currentListeners不是一个引用
-     * 用来保证以下这种情况时能正常运行，所以通过nextListeners和currentListeners共同维护订阅数组
+     * 用来保证在订阅中添加订阅情况时能正常运行（可以自己在redux中把这里注释掉，然后看下有什么变化 :)，所以通过nextListeners和currentListeners共同维护订阅数组
       store.subscribe(() => {
         // getState() 用来获取最新的state
         console.log(store.getState())
@@ -194,13 +195,13 @@ ___
    * dispatch只接受一个参数actino，其中规范约定是一个包含type的对象
   */
   function dispatch(action) {
+    if (!isPlainObject(action)) {
+      throw new Error(
+        'Actions must be plain objects. ' +
+          'Use custom middleware for async actions.'
+      )
+    }
     /** 
-     * 该函数的作用是用来判断传入的acion是不是一个简单对象
-     * 简单对象：new Object 或者 {} 声明的对象
-     * isPlainObject({}) // true
-     * class Per {}
-     * var p = new Per()
-     * isPlainObject(p) // false
       function isPlainObject(obj) {
         if (typeof obj !== 'object' || obj === null) return false
 
@@ -211,13 +212,14 @@ ___
 
         return Object.getPrototypeOf(obj) === proto
       }
+      * 该函数的作用是用来判断传入的acion是不是一个简单对象
+      * 简单对象：new Object 或者 {} 声明的对象
+      * isPlainObject({}) // true
+      * class Per {}
+      * var p = new Per()
+      * isPlainObject(p) // false
     */
-    if (!isPlainObject(action)) {
-      throw new Error(
-        'Actions must be plain objects. ' +
-          'Use custom middleware for async actions.'
-      )
-    }
+
     // 判断是否有type来约束派发的acion必须包含type属性
     if (typeof action.type === 'undefined') {
       throw new Error(
@@ -231,7 +233,7 @@ ___
     }
 
     /** 
-     * 这里是精髓了！
+     * 接下来就是精髓了！
      * currentReducer在上文中定义：let currentReducer = reducer，也就是我们创建store时传入的reducer
      * 例子中我们传入的reducer:
       function counter(state = 0, action) {
@@ -248,7 +250,7 @@ ___
     try {
       isDispatching = true
       /** 
-       * @params currentState就是当前的状态，第一次是默认参数state = 0，后续都是返回的最新的状态
+       * @params currentState就是当前的状态，第一次是我们的默认参数state = 0，后续都是返回的最新的状态
        * @params action = { type: "INCREMENT" }
        * 然后返回新的state给currentState
        * 还记不记得getState()这个函数，不记得话去上面看一下，getState()这个函数的返回值正是currentState
@@ -347,7 +349,8 @@ ___
 
 ***
 
-> ### 以上就是最基础的redux使用及其源码，但是在我们的使用中，通常都是维护一个状态树，然后通过多个reducer来改变状态树，redux提供了combineReducers 这个api来帮助我们维护多个reducer，先让我们看下combineReducers 的使用
+ ## 2、combineReducers的使用及源码
+ ### 以上就是最基础的redux使用及其源码，但是在我们的使用中，通常都是维护一个状态树，然后通过多个reducer来改变状态树，redux提供了combineReducers 这个api来帮助我们维护多个reducer，先让我们看下基本的combineReducers 的使用
 
 ```js
   //   ./src/index2.jsx   提示：将webpack入口改为index2.jsx即可运行
@@ -458,8 +461,6 @@ ___
      */ 
     const finalReducerKeys = Object.keys(finalReducers)
 
-    // This is used to make sure we don't warn about the same
-    // keys multiple times.
     let unexpectedKeyCache
     if (process.env.NODE_ENV !== 'production') {
       unexpectedKeyCache = {}
@@ -483,7 +484,7 @@ ___
      * 然后我们再将这个函数传入createStore
      * 大家还记得createStore接受的第一个参数吗，在没有使用combineReducers之前传入的是单个的reducer
      * 在使用了之后传入的是combination
-     * 回忆一下createStore中的dispatch函数
+     * 再回忆一下createStore中的dispatch函数，其中最主要的是下面这段
      * try {
         isDispatching = true
         currentState = currentReducer(currentState, action)
@@ -521,7 +522,7 @@ ___
         // 为了方便大家理解，我们以i=0时刻为例，看一下每一个字段对应着什么
         const key = finalReducerKeys[i] // 'counter'
         const reducer = finalReducers[key] // function counter
-        const previousStateForKey = state[key] // state就是currentState，现在是undefind
+        const previousStateForKey = state[key] // state就是currentState
         // 执行function counter，并且将最新的state赋值给nextStateForKey
         const nextStateForKey = reducer(previousStateForKey, action)
         if (typeof nextStateForKey === 'undefined') {
@@ -551,7 +552,7 @@ ___
         hasChanged = hasChanged || nextStateForKey !== previousStateForKey
       }
       // 如果所有的reducer都没有改变状态，则返回原来的状态，否则返回最新的状态
-      // 这里就有疑问了，为什么要做这个判断，而不是直接返回最新的状态呢
+      // 这里就有疑问了，为什么要做这个判断，无论有没有发生改变直接返回最新的状态不就可以了吗
       // 个人理解这里之所以要做这个判断，是因为在状态没有改变的情况，还是返回之前的引用，就不必再开辟新的引用来存储
       // 新的状态，只有状态发生改变，才去返回最新的引用
       hasChanged =
@@ -664,6 +665,83 @@ ___
     }
   }
 ```
+
+## 3、combineReducers 进阶用法及其解析
+### 在使用中我们通常会声明一个初始化对象，然后把这个对象传给不同的reducer，由于声明的初始化对象是一个引用数据类型，在使用这我们就会发现一些问题，看下面的例子
+```js
+
+  import { createStore, combineReducers } from "redux";
+
+  const initState = {
+    count: 0,
+    count2: 0
+  }
+
+  const handleData = (state, type) => {
+    state[type] += 1 
+    return state
+  }
+
+  function counter(state = initState, action) {
+    switch (action.type) {
+      case "INCREMENT":
+        return handleData(state, 'count');
+      default:
+        return state;
+    }
+  }
+
+  function counter2(state = initState, action) {
+    switch (action.type) {
+      case "INCREMENT2":
+        return handleData(state, 'count2');
+      default:
+        return state;
+    }
+  }
+
+  const rootReducer = combineReducers({
+    counter,
+    counter2
+  })
+
+  const store = createStore(rootReducer);
+
+  store.dispatch({ type: "INCREMENT" });
+  const a = store.getState()
+  store.dispatch({ type: "INCREMENT" });
+  const b = store.getState()
+  store.dispatch({ type: "INCREMENT2" });
+  const c = store.getState()
+  store.dispatch({ type: "INCREMENT2" });
+  const d = store.getState()
+
+  console.log(a, 'a');  
+  console.log(b, 'b');
+  console.log(c, 'b');
+  console.log(d, 'd');
+
+
+```
+### 思考一下，最后的四个console打印结果是什么呢，我们期望的是依次打印出每次的dispatch修改后的state，结果四次打印的都是{counter: {count: 2, count2: 2}, counter2: {count: 2, count2: 2}}，那怎样去实现期望的效果呢，第一种方法，对state做一层深拷贝，我们只需要改写一下handleData即可
+
+```js
+  const handleData = (state, type) => {
+    state = Object.assign({}, state, {
+      [type]: state[type] + 1
+    })
+    return state
+  }
+  // 或者使用展开运算符
+  const handleData = (state, type) => {
+    return {...state, [type]:state[type] + 1}
+  }
+```
+### 但是这样还是不够优雅，如果初始化的state是多层的对象，只是一层的深拷贝的Object.assign和展开运算符就失效了，如果直接使用深层次的deepClone，在数据量大的时候又会有性能问题，这时候immutable对象就排上用场了，immutable声明的数据被视为不可变的，任何添加、删除、修改操作都会生成一个新的对象，这时候小伙伴又有疑问了，那这和深拷贝有什么区别呢，immutable 实现的原理是持久化数据结构共享，即如果对象树中一个节点发生变化，只修改这个节点和受它影响的父节点，其它节点则进行共享，看下面的动图就方便理解immutable对象了
+![持久化数据结构共享](https://upload-images.jianshu.io/upload_images/2165169-cebb05bca02f1772?imageMogr2/auto-orient/strip|imageView2/2/w/613/format/webp)
+
+> ### 本文只是探讨redux相关知识，想深度学习immutable的小伙伴请自行查阅[资料](https://www.npmjs.com/package/immutable)，而且immutable和react也是有很深的渊源哦
+
 
 
 
