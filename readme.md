@@ -1,8 +1,14 @@
 ## 本文将由浅到深介绍redux及其辅助工具（react-redux、redux-saga、redux-thunk）的使用及其原理，想写这篇文章很久了，今天终于抽出时间来记录一下，小伙伴们准备好了吗，发车！
 
 ## 首先一个很大的误区就是redux是专门给react使用的，在原生js或者vue中，redux都是可以发挥他的作用
+## 目录：
 
-## 1、redux的基本的使用
+### [1、redux的基本的使用](#1)
+### [2、combineReducers的使用及解析](#2)
+### [3、combineReducers进阶用法及其解析](#3)
+### [4、bindActionCreators进阶用法及其解析](#4)
+
+## <span id = "1">1、redux的基本的使用</span>
 ### 先用官网的例子来介绍下redux的最基本的使用（使用在原生js中）
 > ### 注： 在阅读时，请先摒弃之前的使用习惯，不要去思考react-redux，dva，saga等用法，过度纠结辅助工具的语法只会让你对redux源码更加纠结，所以请先抛弃之前的使用语法，我们就从最原始的redux语法开始讲起
 ``` js
@@ -349,8 +355,8 @@ ___
 
 ***
 
- ## 2、combineReducers的使用及源码
- ### 以上就是最基础的redux使用及其源码，但是在我们的使用中，通常都是维护一个状态树，然后通过多个reducer来改变状态树，redux提供了combineReducers 这个api来帮助我们维护多个reducer，先让我们看下基本的combineReducers 的使用
+## <span id = "2">2、combineReducers的使用及解析</span>
+### 以上就是最基础的redux使用及其源码，但是在我们的使用中，通常都是维护一个状态树，然后通过多个reducer来改变状态树，redux提供了combineReducers 这个api来帮助我们维护多个reducer，先让我们看下基本的combineReducers 的使用
 
 ```js
   //   ./src/index2.jsx   提示：将webpack入口改为index2.jsx即可运行
@@ -666,35 +672,40 @@ ___
   }
 ```
 
-## 3、combineReducers 进阶用法及其解析
+
+## <span id = "3">3、combineReducers进阶用法及其解析</span>
 ### 在使用中我们通常会声明一个初始化对象，然后把这个对象传给不同的reducer，由于声明的初始化对象是一个引用数据类型，在使用这我们就会发现一些问题，看下面的例子
 ```js
-
+  //  ./src/index3.jsx
   import { createStore, combineReducers } from "redux";
 
-  const initState = {
-    count: 0,
-    count2: 0
+  const count = {
+    num:0
   }
 
+  const count2 = {
+    num2:0
+  }
+
+  // 错误用法
   const handleData = (state, type) => {
     state[type] += 1 
     return state
   }
 
-  function counter(state = initState, action) {
+  function counter(state = count, action) {
     switch (action.type) {
       case "INCREMENT":
-        return handleData(state, 'count');
+        return handleData(state, 'num');
       default:
         return state;
     }
   }
 
-  function counter2(state = initState, action) {
+  function counter2(state = count2, action) {
     switch (action.type) {
       case "INCREMENT2":
-        return handleData(state, 'count2');
+        return handleData(state, 'num2');
       default:
         return state;
     }
@@ -716,14 +727,16 @@ ___
   store.dispatch({ type: "INCREMENT2" });
   const d = store.getState()
 
-  console.log(a, 'a');  
+  console.log(a, 'a');
   console.log(b, 'b');
   console.log(c, 'b');
   console.log(d, 'd');
 
 
+
+
 ```
-### 思考一下，最后的四个console打印结果是什么呢，我们期望的是依次打印出每次的dispatch修改后的state，结果四次打印的都是{counter: {count: 2, count2: 2}, counter2: {count: 2, count2: 2}}，那怎样去实现期望的效果呢，第一种方法，对state做一层深拷贝，我们只需要改写一下handleData即可
+### 思考一下，最后的四个console打印结果是什么呢，我们期望的是依次打印出每次的dispatch修改后的state，结果四次打印的都是{counter: {num: 2}, counter2: {num2: 2}}，那怎样去实现期望的效果呢，第一种方法，对state做一层深拷贝，我们只需要改写一下handleData即可
 
 ```js
   const handleData = (state, type) => {
@@ -740,8 +753,152 @@ ___
 ### 但是这样还是不够优雅，如果初始化的state是多层的对象，只是一层的深拷贝的Object.assign和展开运算符就失效了，如果直接使用深层次的deepClone，在数据量大的时候又会有性能问题，这时候immutable对象就排上用场了，immutable声明的数据被视为不可变的，任何添加、删除、修改操作都会生成一个新的对象，这时候小伙伴又有疑问了，那这和深拷贝有什么区别呢，immutable 实现的原理是持久化数据结构共享，即如果对象树中一个节点发生变化，只修改这个节点和受它影响的父节点，其它节点则进行共享，看下面的动图就方便理解immutable对象了
 ![持久化数据结构共享](https://upload-images.jianshu.io/upload_images/2165169-cebb05bca02f1772?imageMogr2/auto-orient/strip|imageView2/2/w/613/format/webp)
 
-> ### 本文只是探讨redux相关知识，想深度学习immutable的小伙伴请自行查阅[资料](https://www.npmjs.com/package/immutable)，而且immutable和react也是有很深的渊源哦
+> ### immutable通过set和get来进行赋值和取值操作，immutable的具体语法小伙伴请自行查阅哦[资料](https://www.npmjs.com/package/immutable), 那我们来看看如何在redux中使用不可变对象吧，先来看一下不使用combineReducer的情况。
 
+```js
+  // ./src/index4.jsx
+  import { createStore, combineReducers } from "redux";
+  import { fromJS } from 'immutable';
+
+  const initState = {
+    num: 0,
+  }
+
+
+  // 使用formJS来将js对象转换为immutable对象
+  function counter(state = fromJS(initState), action) {
+    switch (action.type) {
+      case "INCREMENT":
+        return state.set('num', state.get('num') + 1)
+      default:
+        return state;
+    }
+  }
+
+  const store = createStore(counter);
+
+  store.dispatch({ type: "INCREMENT" });
+  const a = store.getState().get('num')
+  store.dispatch({ type: "INCREMENT" });
+  const b = store.getState().get('num')
+
+  console.log(a, 'a'); // 1
+  console.log(b, 'b'); // 2
+
+```
+### 可以看到我们实现了预期的效果，但是，如果我们要使用combineReducer就会出现问题，redux提供的combineReducer方法我们上面也阅读过了，只能处理js对象，如果把immutable对象与redux提供的combineReducer一起使用，就会出现外层是js对象，内层是immutable对象的情况，这显然不是我们想要的，由于很多开发者采用了 Immutable.js，所以也有很多类似的辅助工具，例如 redux-immutable。这个第三方包实现了一个能够处理 Immutable Map 数据而非普通的 JavaScript 对象的 combineReducers
+```js
+  // ./src/index5.jsx
+  import { createStore } from "redux";
+  import { fromJS } from 'immutable';
+  import { combineReducers } from 'redux-immutable';
+
+  const count = {
+    num:0
+  }
+
+  const count2 = {
+    num2:0
+  }
+
+
+
+  // 使用formJS来将js对象转换为immutable对象
+  function counter(state = fromJS(count), action) {
+    switch (action.type) {
+      case "INCREMENT":
+        return state.set('num', state.get('num') + 1)
+      default:
+        return state;
+    }
+  }
+
+  function counter2(state = fromJS(count2), action) {
+    switch (action.type) {
+      case "INCREMENT2":
+        return state.set('num2', state.get('num2') + 1)
+      default:
+        return state;
+    }
+  }
+
+  const rootReducer = combineReducers({
+    counter,
+    counter2
+  })
+
+  const store = createStore(rootReducer);
+
+  store.dispatch({ type: "INCREMENT" });
+  const a = store.getState().getIn(['counter', 'num'])
+  store.dispatch({ type: "INCREMENT" });
+  const b = store.getState().getIn(['counter', 'num'])
+  store.dispatch({ type: "INCREMENT2" });
+  const c = store.getState().getIn(['counter2', 'num2'])
+  store.dispatch({ type: "INCREMENT2" });
+  const d = store.getState().getIn(['counter2', 'num2'])
+
+  console.log(a, 'a'); // 1
+  console.log(b, 'b'); // 2
+  console.log(c, 'c'); // 1
+  console.log(d, 'd'); // 2
+
+
+
+```
+### 通过redux-immutable我们又可以得到一个完整的immutable对象了，那redux-immutable和redux提供的combineReducer有什么区别呢，让我们来看一下redux-immutable的combineReducer[源码](https://github.com/gajus/redux-immutable/blob/master/src/combineReducers.js)
+```js
+  import Immutable from 'immutable';
+  import {
+    getUnexpectedInvocationParameterMessage,
+    validateNextState
+  } from './utilities';
+  /** 
+   * @params reducers 我们传入的reducer
+   * @params getDefaultState 比redux combineReducer多了一个默认状态的参数，但是通常我们也不使用他
+  */
+  export default (reducers: Object, getDefaultState: ?Function = Immutable.Map): Function => {
+    const reducerKeys = Object.keys(reducers);
+
+    return (inputState: ?Function = getDefaultState(), action: Object): Immutable.Map => {
+      // 与之前的一样，在开发环境下会做一些类型校验
+      if (process.env.NODE_ENV !== 'production') {
+        const warningMessage = getUnexpectedInvocationParameterMessage(inputState, reducers, action);
+
+        if (warningMessage) {
+          // eslint-disable-next-line no-console
+          console.error(warningMessage);
+        }
+      }
+
+      //withMutations 主要用来提升性能，将需要多次创建的Imutable合并成一次。主要使用在需要对imutable 需要进行多次中间操作，最终返回一个Imutable的情况下
+      return inputState
+        .withMutations((temporaryState) => {
+          // 这块就和redux combineReducer基本一样了，只不过把对js对象的操作方法转换为了immutable的api
+          reducerKeys.forEach((reducerName) => {
+            const reducer = reducers[reducerName];
+            const currentDomainState = temporaryState.get(reducerName);
+            const nextDomainState = reducer(currentDomainState, action);
+
+            validateNextState(nextDomainState, reducerName, action);
+            /** 
+             * validateNextState这个函数的作用也就是一个类型校验
+              export default (nextState, reducerName: string, action: Object): void => {
+                if (nextState === undefined) {
+                  throw new Error('Reducer "' + reducerName + '" returned undefined when handling "' + action.type + '" action. To ignore an action, you must explicitly return the previous state.');
+                }
+              };
+            */
+
+            temporaryState.set(reducerName, nextDomainState);
+          });
+        });
+    };
+  };
+```
+### 在理解了redux combineReducer的源码以后再来看redux-immutable其实很好理解了，主流程与redux combineReducer一致，只不过是把对js对象的操作方法转换为了immutable的api。
+
+## <span id = "4">4、bindActionCreators进阶用法及其解析</span>
 
 
 

@@ -1,9 +1,19 @@
 import { createStore, combineReducers } from "redux";
 
-const initState = {
-  count: 0,
-  count2: 0
+const count = {
+  num:0
 }
+
+const count2 = {
+  num2:0
+}
+
+// 错误用法
+// const handleData = (state, type) => {
+//   state[type] += 1 
+//   return state
+// }
+
 
 const handleData = (state, type) => {
   // state = Object.assign({}, state, {
@@ -14,19 +24,19 @@ const handleData = (state, type) => {
   return {...state, [type]:state[type] + 1}
 }
 
-function counter(state = initState, action) {
+function counter(state = count, action) {
   switch (action.type) {
     case "INCREMENT":
-      return handleData(state, 'count');
+      return handleData(state, 'num');
     default:
       return state;
   }
 }
 
-function counter2(state = initState, action) {
+function counter2(state = count2, action) {
   switch (action.type) {
     case "INCREMENT2":
-      return handleData(state, 'count2');
+      return handleData(state, 'num2');
     default:
       return state;
   }
