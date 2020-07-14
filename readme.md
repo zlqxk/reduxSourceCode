@@ -5,14 +5,15 @@
 ### [1、redux的基本的使用](#1)
 ### [2、combineReducers的使用及解析](#2)
 ### [3、combineReducers进阶用法及其解析](#3)
+- ### [3.1 immutable对象的使用和解析](#3-1)
+- ### [3.2 redux-immutable的使用和解析](#3-2)
 ### [4、bindActionCreators 用法及其解析](#4)
 ### [5、applyMiddlewarede 用法及其解析](#5)
 ### [6、redux-thunk 用法及其解析](#6)
 
 ## <span id = "1">1、redux的基本的使用</span>
----
 ### 先用官网的例子来介绍下redux的最基本的使用（使用在原生js中）
-> ### 注： 在阅读时，请先摒弃之前的使用习惯，不要去思考react-redux，dva，saga等用法，过度纠结辅助工具的语法只会让你对redux源码更加纠结，所以请先抛弃之前的使用语法，我们就从最原始的redux语法开始讲起
+> #### 注： 在阅读时，请先摒弃之前的使用习惯，不要去思考react-redux，dva，saga等用法，过度纠结辅助工具的语法只会让你对redux源码更加纠结，所以请先抛弃之前的使用语法，我们就从最原始的redux语法开始讲起
 ``` js
   //    ./src/index.jsx
   import { createStore } from "redux";
@@ -160,13 +161,6 @@ ___
     /** 
      * 将我们传入的回调函数push到nextListeners这个数组里，这样后续我们dispatch的时候就可以在这个数组里遍历
      * 找到我们的回调函数，然后执行它
-     * 可以订阅多次，所以用一个数组来维护
-      store.subscribe(() =>
-        console.log(store.getState(), ’第一个订阅‘)
-      );
-      store.subscribe(() =>
-        console.log(store.getState() + 1， ’第二个订阅‘)
-      );
     */
     nextListeners.push(listener)
 
@@ -240,9 +234,20 @@ ___
       throw new Error('Reducers may not dispatch actions.')
     }
 
+    try {
+      isDispatching = true
+      currentState = currentReducer(currentState, action)
+    } finally {
+      isDispatching = false
+    }
     /** 
-     * 接下来就是精髓了！
-     * currentReducer在上文中定义：let currentReducer = reducer，也就是我们创建store时传入的reducer
+     * 上面这里就是精髓了
+     * currentReducer就是我们创建store时传入的reducer
+     * @params currentState就是当前的状态，第一次是我们的默认参数state = 0，后续都是返回的最新的状态
+     * @params action = { type: "INCREMENT" }
+     * 然后返回新的state给currentState
+     * 还记不记得getState()这个函数，getState()这个函数的返回值正是currentState
+     * 所以实现了每次派发一个action改变了state，然后通过getState()就能拿到最新的state
      * 例子中我们传入的reducer:
       function counter(state = 0, action) {
         switch (action.type) {
@@ -255,20 +260,12 @@ ___
         }
       }
     */
-    try {
-      isDispatching = true
-      /** 
-       * @params currentState就是当前的状态，第一次是我们的默认参数state = 0，后续都是返回的最新的状态
-       * @params action = { type: "INCREMENT" }
-       * 然后返回新的state给currentState
-       * 还记不记得getState()这个函数，不记得话去上面看一下，getState()这个函数的返回值正是currentState
-       * 所以实现了每次派发一个action改变了state，然后通过getState()就能拿到最新的state
-      */
-      currentState = currentReducer(currentState, action)
-    } finally {
-      isDispatching = false
-    }
 
+    const listeners = (currentListeners = nextListeners)
+    for (let i = 0; i < listeners.length; i++) {
+      const listener = listeners[i]
+      listener()
+    }
     /** 
      * 为什么每当我们执行store.dispatch({ type: "INCREMENT" })，subscribe订阅的回调函数都会自动执行呢
      * 正是因为在subscribe这个函数里我们将要订阅的回调函数push到了nextListeners这个数组里
@@ -278,11 +275,6 @@ ___
       );
       store.dispatch({ type: "INCREMENT" })
     */
-    const listeners = (currentListeners = nextListeners)
-    for (let i = 0; i < listeners.length; i++) {
-      const listener = listeners[i]
-      listener()
-    }
 
     return action
   }
@@ -355,10 +347,7 @@ ___
   }
 ```
 
-***
-
 ## <span id = "2">2、combineReducers的使用及解析</span>
----
 ### 以上就是最基础的redux使用及其源码，但是在我们的使用中，通常都是维护一个状态树，然后通过多个reducer来改变状态树，redux提供了combineReducers 这个api来帮助我们维护多个reducer，先让我们看下基本的combineReducers 的使用
 
 ```js
@@ -460,6 +449,8 @@ ___
         finalReducers[key] = reducers[key]
       }
     }
+    
+    const finalReducerKeys = Object.keys(finalReducers)
     /**
      *  得到最终的finalReducerKeys和finalReducers
      *  finalReducerKeys = ['counter', 'counter2']
@@ -468,7 +459,6 @@ ___
      *    counter2: funtion counter2
      *  }
      */ 
-    const finalReducerKeys = Object.keys(finalReducers)
 
     let unexpectedKeyCache
     if (process.env.NODE_ENV !== 'production') {
@@ -502,6 +492,8 @@ ___
       }
      * 现在的currentReducer正是combination
     */
+
+
     return function combination(state = {}, action) {
       // 结合上文的shapeAssertionError， 如果assertReducerShape里抛出了异常，那么在这里也会被阻塞
       if (shapeAssertionError) {
@@ -534,26 +526,12 @@ ___
         const previousStateForKey = state[key] // state就是currentState
         // 执行function counter，并且将最新的state赋值给nextStateForKey
         const nextStateForKey = reducer(previousStateForKey, action)
+        // 做一次类型判断
         if (typeof nextStateForKey === 'undefined') {
+          // getUndefinedStateErrorMessage就是返回一段错误文案
           const errorMessage = getUndefinedStateErrorMessage(key, action)
           throw new Error(errorMessage)
         }
-        /** 
-         * 这个函数作用就是返回一段错误文案
-         * 
-        function getUndefinedStateErrorMessage(key, action) {
-          const actionType = action && action.type
-          const actionDescription =
-            (actionType && `action "${String(actionType)}"`) || 'an action'
-
-          return (
-            `Given ${actionDescription}, reducer "${key}" returned undefined. ` +
-            `To ignore an action, you must explicitly return the previous state. ` +
-            `If you want this reducer to hold no value, you can return null instead of undefined.`
-          )
-        }
-        */
-
         // 将counter这次返回的最新的state赋值到nextState这个对象里，所以我们最后拿到的是{conuter: 1, counter: 2} 这种格式
         nextState[key] = nextStateForKey 
         // hasChanged的作用是用来判断最新的状态与上一次的状态有没有发生改变，如果发生改变则为true
@@ -677,7 +655,6 @@ ___
 
 
 ## <span id = "3">3、combineReducers进阶用法及其解析</span>
----
 ### 在使用中我们通常会声明一个初始化对象，然后把这个对象传给不同的reducer，由于声明的初始化对象是一个引用数据类型，在使用这我们就会发现一些问题，看下面的例子
 ```js
   //  ./src/index3.jsx
@@ -754,14 +731,15 @@ ___
     return {...state, [type]:state[type] + 1}
   }
 ```
+### <span id = "3-1">3.1、使用immutable对象</span>
 ### 但是这样还是不够优雅，如果初始化的state是多层的对象，只是一层的深拷贝的Object.assign和展开运算符就失效了，如果直接使用深层次的deepClone，在数据量大的时候又会有性能问题，这时候immutable对象就排上用场了，immutable声明的数据被视为不可变的，任何添加、删除、修改操作都会生成一个新的对象，这时候小伙伴又有疑问了，那这和深拷贝有什么区别呢，immutable 实现的原理是持久化数据结构共享，即如果对象树中一个节点发生变化，只修改这个节点和受它影响的父节点，其它节点则进行共享，看下面的动图就方便理解immutable对象了
 ![持久化数据结构共享](https://upload-images.jianshu.io/upload_images/2165169-cebb05bca02f1772?imageMogr2/auto-orient/strip|imageView2/2/w/613/format/webp)
 
-> ### immutable通过set和get来进行赋值和取值操作，immutable的具体语法小伙伴请自行查阅哦[资料](https://www.npmjs.com/package/immutable), 那我们来看看如何在redux中使用不可变对象吧，先来看一下不使用combineReducer的情况。
+> ### immutable通过set和get来进行赋值和取值操作，immutable的具体语法小伙伴请自行查阅[资料]哦(https://www.npmjs.com/package/immutable), 那我们来看看如何在redux中使用不可变对象吧，先来看一下不使用combineReducer的情况。
 
 ```js
   // ./src/index4.jsx
-  import { createStore, combineReducers } from "redux";
+  import { createStore } from "redux";
   import { fromJS } from 'immutable';
 
   const initState = {
@@ -790,6 +768,7 @@ ___
   console.log(b, 'b'); // 2
 
 ```
+### <span id = "3-2">3.2、redux-immutable的使用和解析</span>
 ### 可以看到我们实现了预期的效果，但是，如果我们要使用combineReducer就会出现问题，redux提供的combineReducer方法我们上面也阅读过了，只能处理js对象，如果把immutable对象与redux提供的combineReducer一起使用，就会出现外层是js对象，内层是immutable对象的情况，这显然不是我们想要的，由于很多开发者采用了 Immutable.js，所以也有很多类似的辅助工具，例如 redux-immutable。这个第三方包实现了一个能够处理 Immutable Map 数据而非普通的 JavaScript 对象的 combineReducers
 ```js
   // ./src/index5.jsx
@@ -903,7 +882,6 @@ ___
 ### 在理解了redux combineReducer的源码以后再来看redux-immutable其实很好理解了，主流程与redux combineReducer一致，只不过是把对js对象的操作方法转换为了immutable的api。
 
 ## <span id = "4">4、bindActionCreators用法及其解析</span>
----
 ### 看到这里有的小伙伴会问，为什么上面的例子里派发action都是用的store.dispatch，而在实际应用的时候好像很少这样写，通常都是以函数的形式来派发action呢？这就是bindActionCreators的功劳了，bindActionCreators会对每个 action creator 进行包装，以便可以直接调用它们，那我们通过例子🌰来看一下bindActionCreators如何使用
 ```js
   //   ./src/index6.jsx
@@ -1031,7 +1009,6 @@ ___
 ### bindActionCreators很巧妙的将dispatch({type:xxx})的格式转换成了我们熟悉的函数的形式，并且如果应用在react中时，我们可以直接把这个函数传到子组件，这样子组件并不会感知到redux
 
 ## <span id = "5">5、applyMiddleware的使用和解析</span>
----
 ### 在讲中间件之前我们先看一下redux提供给我们的一个工具函数compose
 ```js
   export default function compose(...funcs) {
@@ -1210,7 +1187,6 @@ ___
 ### applyMiddleware的源码可谓是短小精悍，但是想要彻底理解他还需要反复琢磨
 
 ## <span id = "6">6、redux-thunk的使用和解析</span>
----
 ### 默认情况下，createStore() 所创建的 Redux store 没有使用 middleware，所以只支持 同步数据流。如果我们想要在dispatch的时候发起异步请求，就可以使用像 redux-thunk 或 redux-promise 这样支持异步的 middleware，我们先看下redux-thunk是如何使用
 ```js
   //    ./src/index9.jsx
