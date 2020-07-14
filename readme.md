@@ -1,14 +1,16 @@
 ## 本文将由浅到深介绍redux及其辅助工具（react-redux、redux-saga、redux-thunk）的使用及其原理，想写这篇文章很久了，今天终于抽出时间来记录一下，小伙伴们准备好了吗，发车！
 
-## 首先一个很大的误区就是redux是专门给react使用的，在原生js或者vue中，redux都是可以发挥他的作用
 ## 目录：
 
 ### [1、redux的基本的使用](#1)
 ### [2、combineReducers的使用及解析](#2)
 ### [3、combineReducers进阶用法及其解析](#3)
-### [4、bindActionCreators进阶用法及其解析](#4)
+### [4、bindActionCreators 用法及其解析](#4)
+### [5、applyMiddlewarede 用法及其解析](#5)
+### [6、redux-thunk 用法及其解析](#6)
 
 ## <span id = "1">1、redux的基本的使用</span>
+---
 ### 先用官网的例子来介绍下redux的最基本的使用（使用在原生js中）
 > ### 注： 在阅读时，请先摒弃之前的使用习惯，不要去思考react-redux，dva，saga等用法，过度纠结辅助工具的语法只会让你对redux源码更加纠结，所以请先抛弃之前的使用语法，我们就从最原始的redux语法开始讲起
 ``` js
@@ -356,6 +358,7 @@ ___
 ***
 
 ## <span id = "2">2、combineReducers的使用及解析</span>
+---
 ### 以上就是最基础的redux使用及其源码，但是在我们的使用中，通常都是维护一个状态树，然后通过多个reducer来改变状态树，redux提供了combineReducers 这个api来帮助我们维护多个reducer，先让我们看下基本的combineReducers 的使用
 
 ```js
@@ -674,6 +677,7 @@ ___
 
 
 ## <span id = "3">3、combineReducers进阶用法及其解析</span>
+---
 ### 在使用中我们通常会声明一个初始化对象，然后把这个对象传给不同的reducer，由于声明的初始化对象是一个引用数据类型，在使用这我们就会发现一些问题，看下面的例子
 ```js
   //  ./src/index3.jsx
@@ -898,8 +902,470 @@ ___
 ```
 ### 在理解了redux combineReducer的源码以后再来看redux-immutable其实很好理解了，主流程与redux combineReducer一致，只不过是把对js对象的操作方法转换为了immutable的api。
 
-## <span id = "4">4、bindActionCreators进阶用法及其解析</span>
+## <span id = "4">4、bindActionCreators用法及其解析</span>
+---
+### 看到这里有的小伙伴会问，为什么上面的例子里派发action都是用的store.dispatch，而在实际应用的时候好像很少这样写，通常都是以函数的形式来派发action呢？这就是bindActionCreators的功劳了，bindActionCreators会对每个 action creator 进行包装，以便可以直接调用它们，那我们通过例子🌰来看一下bindActionCreators如何使用
+```js
+  //   ./src/index6.jsx
+  import { createStore, bindActionCreators } from "redux";
 
+  const initState = {
+    num1: 0,
+    num2: 0,
+    num3: 0,
+    num4: 0
+  };
+
+  function counter(state = initState, action) {
+    switch (action.type) {
+      case "ADD_NUM1":
+        return { ...state, num1: state.num1 + 1 };
+      case "ADD_NUM2":
+        return { ...state, num2: state.num2 + 1 };
+      case "ADD_NUM3":
+        return { ...state, num3: state.num3 + 1 };
+      case "ADD_NUM4":
+        return { ...state, num4: state.num4 + 1 };
+      default:
+        return state;
+    }
+  }
+
+  const store = createStore(counter);
+
+  // 声明了四个的action creator，返回值就是要派发的action
+  const ADD_NUM1 = () => {
+    return {
+      type: "ADD_NUM1"
+    };
+  };
+  const ADD_NUM2 = () => {
+    return {
+      type: "ADD_NUM2"
+    };
+  };
+  const ADD_NUM3 = () => {
+    return {
+      type: "ADD_NUM3"
+    };
+  };
+  const ADD_NUM4 = () => {
+    return {
+      type: "ADD_NUM4"
+    };
+  };
+
+  /**
+   * bindActionCreators(actionCreators, dispatch)
+   * 这个方法接受两个参数
+   * actionCreators： 一个 action creator，或者一个 value 是 action creator 的对象。
+   * dispatch： 一个由 Store 实例提供的 dispatch 函数。
+   */
+  const boundActionCreators = bindActionCreators(
+    {
+      ADD_NUM1,
+      ADD_NUM2,
+      ADD_NUM3,
+      ADD_NUM4
+    },
+    store.dispatch
+  );
+
+  console.log(boundActionCreators);
+
+  // 这样就可以通过下面的方式调用了
+  boundActionCreators.ADD_NUM1();
+  boundActionCreators.ADD_NUM2();
+  boundActionCreators.ADD_NUM3();
+  boundActionCreators.ADD_NUM4();
+
+  console.log(store.getState());
+```
+### 注：唯一会使用到 bindActionCreators 的场景是当你需要把 action creator 往下传到一个组件上，却不想让这个组件觉察到 Redux 的存在，而且不希望把 dispatch 或 Redux store 传给它。当然你也可以在任何场景下使用。:) ，那接下来让我们看一下bindActionCreators是怎样帮我们做到派发action的.
+```js
+  /**
+   * actionCreators： 一个 action creator，或者一个 value 是 action creator 的对象。
+   * dispatch： 一个由 Store 实例提供的 dispatch 函数。
+   */
+  export default function bindActionCreators(actionCreators, dispatch) {
+    // 如果我们只传入了一个action creator，返回bindActionCreator这个函数的返回值（这个函数我把他放在了下面）
+    if (typeof actionCreators === 'function') {
+      return bindActionCreator(actionCreators, dispatch)
+    }
+    // 国际惯例
+    if (typeof actionCreators !== 'object' || actionCreators === null) {
+      throw new Error(
+        `bindActionCreators expected an object or a function, instead received ${
+          actionCreators === null ? 'null' : typeof actionCreators
+        }. ` +
+          `Did you write "import ActionCreators from" instead of "import * as ActionCreators from"?`
+      )
+    }
+
+    // 如果我们传入actionCreators的是一个action creator 的对象，那么就循环遍历这个对象，然后把每一个元素都转换成bindActionCreator
+    const boundActionCreators = {}
+    for (const key in actionCreators) {
+      const actionCreator = actionCreators[key]
+      if (typeof actionCreator === 'function') {
+        boundActionCreators[key] = bindActionCreator(actionCreator, dispatch)
+      }
+    }
+    return boundActionCreators
+  }
+
+  /**
+   * 如果bindActionCreators第一个参数只传入了一个 action creator，将会返回下面这个函数
+   * actionCreator： 传入的 action creator
+   * dispatch： store.dispatch
+  */
+  function bindActionCreator(actionCreator, dispatch) {
+    // 这个其实很好理解，dispatch就是store.dispatch
+    // actionCreator.apply(this, arguments)这个其实就是调用了我们声明的action creator，返回值也就是 {type: xxxxx}
+    // 这样就实现了只要我们调用ADD_NUM就相当于执行了store.dispatch({type:xxxxx})
+    return function() {
+      return dispatch(actionCreator.apply(this, arguments))
+    }
+  }
+
+```
+### bindActionCreators很巧妙的将dispatch({type:xxx})的格式转换成了我们熟悉的函数的形式，并且如果应用在react中时，我们可以直接把这个函数传到子组件，这样子组件并不会感知到redux
+
+## <span id = "5">5、applyMiddleware的使用和解析</span>
+---
+### 在讲中间件之前我们先看一下redux提供给我们的一个工具函数compose
+```js
+  export default function compose(...funcs) {
+    if (funcs.length === 0) {
+      return arg => arg
+    }
+
+    if (funcs.length === 1) {
+      return funcs[0]
+    }
+
+    return funcs.reduce((a, b) => (...args) => a(b(...args)))
+  }
+```
+### 这个函数有什么作用呢，让我们执行以下看看
+```js
+  //   ./src/index7.jsx
+  function compose(...funcs) {
+    if (funcs.length === 0) {
+      return arg => arg
+    }
+
+    if (funcs.length === 1) {
+      return funcs[0]
+    }
+
+    return funcs.reduce((a, b) => (...args) => a(b(...args)))
+  }
+
+  function func1 (arg) {
+    return arg + 1
+  }
+  function func2 (arg) {
+    return arg + 1
+  }
+  function func3 (arg) {
+    return arg + 1
+  }
+  const res = func1(func2(func3(1)));
+  console.log(res, 'res') // 4
+
+  const composeFun = compose(func1, func2, func3);
+  const res2 = composeFun(1)
+  console.log(res2, 'res2') // 4
+```
+### 可以看到我们将func1(func2(func3(1)))这种格式转换成了compose(func1, func2, func3)(1)，这种写法有两个优点。
+- 1、就是防止函数左边化，使代码更加清晰
+- 2、如果我们不知道有多少个函数嵌套调用的时候，使用compose就比较方便了，例如我们在使用redux时可能会传入多个中间件函数，compose可以把所有的中间件当做参数传入，就可以实现中间件的嵌套使用了
+### 在介绍applyMiddleware之前，我们需要了解一下中间件的心智模型，redux官网[中间件篇](https://www.redux.org.cn/docs/advanced/Middleware.html)将带领我们一步一步的理解 Middleware，他会带领你从简单的函数封装到编写一个简单的中间件，我相信当你耐心看完这边文章以后一定会对中间件有了更加深刻的理解，这时我们就可以来看一下applyMiddleware是怎样实现的了。
+>#### 注：这篇文章写得特别好，没有看过这篇文章的小伙伴一定要多琢磨几遍，这里再推荐一下Dan Abramov的个人[博客](https://overreacted.io/)，每一篇都是满满的干货（而且大部分篇章都有中文翻译），其中[useEffect完整指南](https://overreacted.io/zh-hans/a-complete-guide-to-useeffect/)完整的讲述了函数式组件的心智模型，推荐大家阅读一下
+### 在讲applyMiddleware之前我们先看一下applyMiddleware是如何使用的
+```js 
+  //    ./src/index8.jsx
+  import { createStore, applyMiddleware } from "redux";
+
+  /**
+   * 记录所有被发起的 action 以及产生的新的 state。的中间件
+   * 相信大家在读完redux官网的文章以后肯定可以理解下面这个中间件函数
+   */
+  const logger = store => next => action => {
+    console.group(action.type)
+    console.info('dispatching', action)
+    let result = next(action)
+    console.log('next state', store.getState())
+    console.groupEnd(action.type)
+    return result
+  }
+
+
+  const initState = {
+    num: 0,
+  };
+
+  function counter(state = initState, action) {
+    switch (action.type) {
+      case "ADD_NUM1":
+        return { ...state, num: state.num + 1 };
+      default:
+        return state;
+    }
+  }
+
+  const store = createStore(counter, applyMiddleware(logger));
+
+  store.dispatch({type: 'ADD_NUM1'})
+  store.dispatch({type: 'ADD_NUM1'})
+
+```
+### 我们可以看到applyMiddleware(logger)是当做第参数传入到createStore里的，所以我们回顾一下createStore
+```js
+  createStore(reducer, preloadedState, enhancer) {
+    ...
+    ...
+    if (typeof enhancer !== 'undefined') {
+      if (typeof enhancer !== 'function') {
+        throw new Error('Expected the enhancer to be a function.')
+      }
+      // 关键在这里
+      return enhancer(createStore)(reducer, preloadedState)
+    }
+    ...
+    ...
+  }
+```
+### enhancer就是我们传入applyMiddleware(logger)，所以接下来的思路就是看一下applyMiddleware(logger)返回值，这个时候我们就要看一下applyMiddleware的源码是怎样实现的了
+```js
+  import compose from './compose'
+  /**
+   * 接收的参数就是我们传入的中间件，并且使用解构运算将传入多个中间件转换为数组的形式
+  */
+  export default function applyMiddleware(...middlewares) {
+    // 返回值是一个三级的柯里化函数
+    // 第一级函数调用就是enhancer(createStore)，相当于把创建store的方法传给了applyMiddleware
+    // 第二级函数调用就是enhancer(createStore)(reducer, preloadedState)，将reducer, preloadedState传给applyMiddleware
+    return createStore => (...args) => {
+      // ...args就是reducer, preloadedState，这里就相当于创建了一个store
+      const store = createStore(...args)
+      let dispatch = () => {
+        throw new Error(
+          'Dispatching while constructing your middleware is not allowed. ' +
+            'Other middleware would not be applied to this dispatch.'
+        )
+      }
+      // 这里就是文档里说的：它只暴露一个 store API 的子集给 middleware：dispatch(action) 和 getState()。
+      const middlewareAPI = {
+        getState: store.getState,
+        dispatch: (...args) => dispatch(...args)
+      }
+      /**
+       * 这是我们传入的中间件
+        const logger = store => next => action => {
+          console.group(action.type)
+          console.info('dispatching', action)
+          let result = next(action)
+          console.log('next state', store.getState())
+          console.groupEnd(action.type)
+          return result
+        }
+      */
+      const chain = middlewares.map(middleware => middleware(middlewareAPI))
+      /**
+       * 经过上面的map遍历调用每一个中间件，得到的chain如下
+       * chain = [
+           next => action => {
+            console.group(action.type)
+            console.info('dispatching', action)
+            let result = next(action)
+            console.log('next state', middlewareAPI.getState()) // 这里发生了改变
+            console.groupEnd(action.type)
+            return result
+          }
+       * ]
+      */
+      dispatch = compose(...chain)(store.dispatch)
+      /**
+       * compose(...chain)的作用就是将我们传入的中间件嵌套调用，作用是保证每一个中间的的传入的next参数都是上一个中间件修改后的dispatch，由于我们这里只传入了一个中间件，compose(...chain)结果就是chain[0]
+       * dispatch = 
+          action => {
+            console.group(action.type)
+            console.info('dispatching', action)
+            let result = store.dispatch(action) // 这里发生了改变
+            console.log('next state', middlewareAPI.getState())
+            console.groupEnd(action.type)
+            return result
+          }
+      */
+      return {
+        ...store,
+        dispatch
+      }
+      // 最后将改写后的dispatch返回
+    }
+  }
+
+```
+### applyMiddleware的源码可谓是短小精悍，但是想要彻底理解他还需要反复琢磨
+
+## <span id = "6">6、redux-thunk的使用和解析</span>
+---
+### 默认情况下，createStore() 所创建的 Redux store 没有使用 middleware，所以只支持 同步数据流。如果我们想要在dispatch的时候发起异步请求，就可以使用像 redux-thunk 或 redux-promise 这样支持异步的 middleware，我们先看下redux-thunk是如何使用
+```js
+  //    ./src/index9.jsx
+  import { createStore, applyMiddleware } from "redux";
+  import thunk from "redux-thunk";
+
+  const initState = {
+    num: 0,
+    data: null
+  };
+
+  const logger = store => next => action => {
+    console.group(action.type)
+    console.info('dispatching', action)
+    let result = next(action)
+    console.log('next state', store.getState())
+    console.groupEnd(action.type)
+    return result
+  }
+
+  function counter(state = initState, action) {
+    switch (action.type) {
+      case "ADD_NUM1":
+        return { ...state, num: state.num + 1 };
+      case "FETCH_DATA":
+        return {...state, data: action.data }
+      default:
+        return state;
+    }
+  }
+  // 同时使用了thunk和logger两个中间件
+  const store = createStore(counter, applyMiddleware(thunk, logger));
+
+  // 异步请求数据的方法
+  const fetchData = () => {
+    return new Promise((resolve, reject) => {
+      setTimeout(() => {
+        resolve('im asyncdata')
+      }, 2000);
+    })
+  }
+
+  // 这是我们要派发的action，使用了redux-thunk以后，action书写成一个函数，在函数里面dispatch action
+  const asyncData = () => {
+    return dispatch => {
+      fetchData().then(res => {
+        dispatch({
+          type: 'FETCH_DATA',
+          data: res
+        })
+      }) 
+    }
+  }
+
+  store.dispatch({ type: "ADD_NUM1" });
+  store.dispatch(asyncData());
+
+```
+### 使用了redux-thunk以后，异步请求我们不再简单的dispatch一个对象，而是dispatch一个函数，为什么会发成这种变化呢，让我们来看一看redux-thunk内部究竟发生了什么
+```js
+  function createThunkMiddleware(extraArgument) {
+    return ({ dispatch, getState }) => next => action => {
+      if (typeof action === 'function') {
+        return action(dispatch, getState, extraArgument);
+      }
+
+      return next(action);
+    };
+  }
+
+  const thunk = createThunkMiddleware();
+  thunk.withExtraArgument = createThunkMiddleware;
+
+  export default thunk;
+```
+### 熟悉了中间件以后，其实再阅读中间件就变得很容易了，上述代码中，真正实现redux-thunk的功能的代码就以下这个函数
+```js
+  action => {
+    if (typeof action === 'function') {
+      return action(dispatch, getState, extraArgument);
+    }
+
+    return next(action);
+  };
+```
+### 如果dispatch的是一个对象，那么还是原来的dispatch，如果dispatch的是一个函数，那我们就执行这个函数，再回顾一下我们写的asyncData这个函数，执行他的返回值的结果就是在两秒后dispatch一个普通的action，就是这么简单的实现了异步数据流，其实看到这里我们也会发现，如果不引入redux-thunk我们也可以自己手动调用asyncData()(store.dispatch)来发起异步请求，只是redux-thunk帮我们优雅的做了处理，并且通过redux-thunk处理，还可以完美的兼容bindActionCreators
+```js
+  //    ./src/index10.jsx
+  import { createStore, applyMiddleware, bindActionCreators } from "redux";
+  import thunk from "redux-thunk";
+
+  const initState = {
+    num: 0,
+    data: null
+  };
+
+  const logger = store => next => action => {
+    console.group(action.type)
+    console.info('dispatching', action)
+    let result = next(action)
+    console.log('next state', store.getState())
+    console.groupEnd(action.type)
+    return result
+  }
+
+  function counter(state = initState, action) {
+    switch (action.type) {
+      case "ADD_NUM1":
+        return { ...state, num: state.num + 1 };
+      case "FETCH_DATA":
+        return {...state, data: action.data }
+      default:
+        return state;
+    }
+  }
+  // 同时使用了thunk和logger两个中间件
+  const store = createStore(counter, applyMiddleware(thunk, logger));
+
+  // 异步请求数据的方法
+  const fetchData = () => {
+    return new Promise((resolve, reject) => {
+      setTimeout(() => {
+        resolve('im asyncdata')
+      }, 2000);
+    })
+  }
+
+  // 这是我们要派发的action，使用了redux-thunk以后，action书写成一个函数，在函数里面dispatch action
+  const asyncData = () => {
+    return dispatch => {
+      fetchData().then(res => {
+        dispatch({
+          type: 'FETCH_DATA',
+          data: res
+        })
+      })
+    }
+  }
+
+  const addNum1 = () => {
+    return {
+      type: "ADD_NUM1"
+    }
+  }
+
+  const boundActionCreators = bindActionCreators({
+    asyncData,
+    addNum1
+  }, store.dispatch)
+
+  console.log(boundActionCreators, 'boundActionCreators')
+  boundActionCreators.asyncData()
+  boundActionCreators.addNum1()
+```
+### 到这里，整个redux的源码解析也就完成了
 
 
 
